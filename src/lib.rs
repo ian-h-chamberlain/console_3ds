@@ -1,11 +1,13 @@
 #![feature(once_cell)]
 
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::{Cell, RefMut};
 use std::lazy::OnceCell;
 use std::ptr;
 
 use ctru::gfx::BottomScreen;
-use fontdue::{Font, FontSettings, Metrics};
+use fontdue::layout::WrapStyle;
+use fontdue::layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle};
+use fontdue::{Font, FontSettings};
 
 mod devoptab {
     #![allow(non_camel_case_types)]
@@ -36,16 +38,10 @@ const _IONBF: libc::c_int = 2;
 static mut STDOUT: OnceCell<devoptab_t> = OnceCell::new();
 
 pub struct Console<'screen> {
-    pub font: fontdue::Font,
+    fonts: Vec<Font>,
+    layout: Layout<()>,
     screen: RefMut<'screen, BottomScreen>,
-    pixel_pos: RefCell<Position>,
     is_stdout_selected: Cell<bool>,
-}
-
-#[derive(Default)]
-struct Position {
-    x: usize,
-    y: usize,
 }
 
 unsafe extern "C" fn write_r(
@@ -59,9 +55,9 @@ unsafe extern "C" fn write_r(
 }
 
 impl<'screen> Console<'screen> {
-    const SCALE: f32 = 6.0;
+    const SCALE: f32 = 14.0;
 
-    pub fn init(screen: RefMut<'screen, BottomScreen>) -> Self {
+    pub fn init(mut screen: RefMut<'screen, BottomScreen>) -> Self {
         let font = Font::from_bytes(
             DEFAULT_FONT,
             FontSettings {
@@ -71,10 +67,22 @@ impl<'screen> Console<'screen> {
         )
         .unwrap();
 
+        // Framebuffer is in portrait mode, so swap X/Y and use a positive-y up
+        // instead of down, which is the framebuffer's order.
+        let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+        layout.reset(&LayoutSettings {
+            x: 0.0,
+            y: 0.0,
+            max_width: Some(f32::from(screen.get_raw_framebuffer().height)),
+            max_height: Some(f32::from(screen.get_raw_framebuffer().width)),
+            wrap_style: WrapStyle::Letter,
+            ..Default::default()
+        });
+
         Self {
-            font,
+            fonts: vec![font],
+            layout,
             screen,
-            pixel_pos: RefCell::default(),
             is_stdout_selected: Cell::new(false),
         }
     }
@@ -129,48 +137,69 @@ impl<'screen> Console<'screen> {
     ) -> libc::ssize_t {
         let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
 
+        let text = if let Ok(s) = std::str::from_utf8(bytes) {
+            s
+        } else {
+            // just fail for now
+            return 0;
+        };
+
         let frame_buffer = self.screen.get_raw_framebuffer();
 
-        let mut count = 0;
-        let mut pixel_pos = self.pixel_pos.borrow_mut();
+        self.layout
+            .append(&self.fonts, &TextStyle::new(text, Self::SCALE, 0));
 
-        for c in bytes.iter().map(|&b| char::from(b)) {
-            let (
-                Metrics {
-                    width,
-                    height,
-                    advance_width,
-                    ..
-                },
-                pixels,
-            ) = self.font.rasterize(c, Self::SCALE);
+        for &glyph in self.layout.glyphs() {
+            let GlyphPosition {
+                parent,
+                x: glyph_x,
+                y: glyph_y,
+                width,
+                height,
+                char_data,
+                font_index,
+                ..
+            } = glyph;
+
+            if !char_data.rasterize() {
+                continue;
+            }
+
+            // TODO: try subpixel rendering
+            let (_, pixels) = self.fonts[font_index].rasterize(parent, Self::SCALE);
 
             for j in 0..height {
                 for i in 0..width {
-                    let draw_y = pixel_pos.y + height - j;
-                    let draw_x = pixel_pos.x + i;
-                    let offset: usize = (draw_y + draw_x * height) * 3;
+                    // Swap x + y for portrait-mode framebuffer.
+                    let framebuffer_y = glyph_x as usize + i;
 
-                    let value = pixels[j * width + i];
-                    let rgb = rgb565(value, value, value);
+                    // positive y in glyph == negative y in framebuffer
+                    let framebuffer_x = frame_buffer.width as usize - (glyph_y as usize + j);
 
-                    let b: u8 = (((rgb >> 11) & 0x1F) << 3) as u8;
-                    let g: u8 = (((rgb >> 5) & 0x3F) << 2) as u8;
-                    let r: u8 = ((rgb & 0x1F) << 3) as u8;
+                    // RGB656 == 2 bytes per pixel
+                    let offset = (framebuffer_x + framebuffer_y * frame_buffer.width as usize) * 2;
+
+                    // Round 50% or more up for now. Antialiasing would be nice but
+                    // is kinda weird with the 565 format, it seems...
+                    let value = if pixels[j * width + i] > 0x7F {
+                        0xFF
+                    } else {
+                        0
+                    };
+
+                    let rgb_bytes = rgb565(value, value, value).to_be_bytes();
 
                     unsafe {
-                        *frame_buffer.ptr.offset(offset as isize) = r;
-                        *frame_buffer.ptr.offset(offset as isize + 1) = g;
-                        *frame_buffer.ptr.offset(offset as isize + 2) = b;
+                        frame_buffer
+                            .ptr
+                            .add(offset)
+                            .copy_from(rgb_bytes.as_ptr(), rgb_bytes.len());
                     }
                 }
             }
-
-            pixel_pos.x += advance_width.ceil() as usize;
-            count += 1;
         }
 
-        count
+        len as _
     }
 }
 

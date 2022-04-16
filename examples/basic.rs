@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::io::Write;
+use std::time::Instant;
 
 use console_3ds::Console;
 use ctru::gfx::{Gfx, Screen};
@@ -12,7 +11,7 @@ fn main() {
 
     let apt = Apt::init().unwrap();
     let hid = Hid::init().unwrap();
-    let mut gfx = Gfx::init().unwrap();
+    let gfx = Gfx::init().unwrap();
 
     let mut bottom_screen = gfx.bottom_screen.borrow_mut();
     bottom_screen.set_double_buffering(false);
@@ -22,9 +21,14 @@ fn main() {
     // Need to support in ctru-rs
     gfx.swap_buffers();
 
+    let start = Instant::now();
+
     // Start a console on the top screen
     let mut top_console = Console::init(bottom_screen);
     top_console.select_stdout();
+
+    let duration = Instant::now() - start;
+    println!("Loaded font in {:.2?}", duration);
 
     while apt.main_loop() {
         hid.scan_input();
@@ -32,8 +36,11 @@ fn main() {
         if keys.contains(KeyPad::KEY_START) {
             break;
         } else if keys.contains(KeyPad::KEY_A) {
-            print!("H");
-            std::io::stdout().flush().unwrap();
+            println!("Hello world!");
+        } else if keys.contains(KeyPad::KEY_B) {
+            println!(
+                "This is a really long line of text to test the wrapping behavior of the library"
+            );
         }
 
         gfx.flush_buffers();

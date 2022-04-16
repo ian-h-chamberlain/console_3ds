@@ -8,3 +8,7 @@ authors = [""]
 ctru-rs = { git = "https://github.com/Meziu/ctru-rs.git" }
 fontdue = "0.7.2"
 libc = { path = "../libc" }
+
+[profile.dev.package.fontdue]
+# Without this, font loading takes a really long time at startup
+opt-level = 3
