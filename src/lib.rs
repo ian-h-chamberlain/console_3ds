@@ -9,7 +9,7 @@ use fontdue::layout::WrapStyle;
 use fontdue::layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-mod devoptab {
+mod ffi {
     #![allow(non_camel_case_types)]
     #![allow(non_upper_case_globals)]
     #![allow(non_camel_case_types)]
@@ -17,25 +17,21 @@ mod devoptab {
     #![allow(dead_code)]
     #![allow(clippy::all)]
 
-    mod bindings;
-    pub use bindings::*;
+    mod generated;
+    pub use generated::*;
+
+    extern "C" {
+        // Unfortunately, the bindgen-generated type for this has size 0 instead
+        // of the actual STD_MAX or variable size, so we write our own declaration
+        // here instead.
+        #[link_name = "devoptab_list"]
+        pub static mut DEVOPTAB_LIST: [*const devoptab_t; STD_MAX as usize];
+    }
 }
-
-use devoptab::devoptab_t;
-
-use crate::devoptab::_reent;
 
 const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf");
 
-extern "C" {
-    #[link_name = "devoptab_list"]
-    static mut DEVOPTAB_LIST: [*const devoptab_t; devoptab::STD_MAX as usize];
-
-    fn __getreent() -> *mut devoptab::_reent;
-}
-
-const _IONBF: libc::c_int = 2;
-static mut STDOUT: OnceCell<devoptab_t> = OnceCell::new();
+static mut STDOUT: OnceCell<ffi::devoptab_t> = OnceCell::new();
 
 pub struct Console<'screen> {
     fonts: Vec<Font>,
@@ -45,13 +41,13 @@ pub struct Console<'screen> {
 }
 
 unsafe extern "C" fn write_r(
-    r: *mut _reent,
+    r: *mut ffi::_reent,
     fd: *mut ::libc::c_void,
     ptr: *const ::libc::c_char,
-    len: devoptab::size_t,
-) -> devoptab::ssize_t {
+    len: libc::size_t,
+) -> libc::ssize_t {
     let console: &mut Console = &mut *((*r).deviceData).cast();
-    console.write(fd, ptr, len as usize) as devoptab::ssize_t
+    console.write(fd, ptr, len as usize) as libc::ssize_t
 }
 
 impl<'screen> Console<'screen> {
@@ -91,7 +87,7 @@ impl<'screen> Console<'screen> {
         self.is_stdout_selected.set(true);
 
         unsafe {
-            STDOUT.get_or_init(|| devoptab_t {
+            STDOUT.get_or_init(|| ffi::devoptab_t {
                 name: "console_stdout\0".as_ptr().cast(),
                 // structSize: std::mem::size_of::<Self>() as u32,
                 write_r: Some(write_r),
@@ -113,15 +109,15 @@ impl<'screen> Console<'screen> {
                 stdout.deviceData = (self as *mut Self).cast();
             }
 
-            let stdout: &'static devoptab_t = STDOUT.get().unwrap();
+            let stdout: &'static ffi::devoptab_t = STDOUT.get().unwrap();
 
-            let devoptab_list = &mut DEVOPTAB_LIST;
+            let devoptab_list = &mut ffi::DEVOPTAB_LIST;
 
-            devoptab_list[devoptab::STD_OUT as usize] = stdout as *const devoptab_t;
+            devoptab_list[ffi::STD_OUT as usize] = stdout as *const ffi::devoptab_t;
 
             #[allow(clippy::used_underscore_binding)]
-            let stdout_file = (*__getreent())._stdout;
-            libc::setvbuf(stdout_file.cast(), ptr::null_mut(), _IONBF, 0);
+            let stdout_file = (*ffi::__getreent())._stdout;
+            libc::setvbuf(stdout_file.cast(), ptr::null_mut(), ffi::_IONBF as _, 0);
         }
     }
 

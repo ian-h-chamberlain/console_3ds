@@ -2,8 +2,7 @@
 
 set -euxo pipefail
 
-
-bindgen "$DEVKITARM/arm-none-eabi/include/sys/iosupport.h" \
+bindgen "src/ffi/types.h" \
     --rust-target nightly \
     --use-core \
     --distrust-clang-mangling \
@@ -11,9 +10,13 @@ bindgen "$DEVKITARM/arm-none-eabi/include/sys/iosupport.h" \
     --no-layout-tests \
     --ctypes-prefix "::libc" \
     --no-prepend-enum-name \
-    --generate "types" \
-    --allowlist-type "devoptab_t" \
-    --allowlist-var "STD_.*" \
+    --size_t-is-usize \
+    --generate "functions,types,vars" \
+    --allowlist-type "devoptab_t|_reent|DIR_ITER|_mbstate_t" \
+    --opaque-type "_mbstate_t|__locale_t|_Bigint|__tm|_on_exit_args|_atexit|__sbuf|__sFILE|_glue|_rand48|timeval|timespec|stat.*|DIR_ITER" \
+    --no-default "__reent" \
+    --allowlist-var "STD_.*|_IO.*F" \
+    --allowlist-function "__getreent" \
     --with-derive-default \
     -- \
     --target=arm-none-eabi \
@@ -26,5 +29,5 @@ bindgen "$DEVKITARM/arm-none-eabi/include/sys/iosupport.h" \
     -mfpu=vfp \
     -DARM11 \
     -D__3DS__ \
-> src/devoptab.rs
+> src/ffi/generated.rs
 
