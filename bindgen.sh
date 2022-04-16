@@ -15,7 +15,7 @@ bindgen "src/ffi/types.h" \
     --allowlist-type "devoptab_t|_reent|DIR_ITER|_mbstate_t" \
     --opaque-type "_mbstate_t|__locale_t|_Bigint|__tm|_on_exit_args|_atexit|__sbuf|__sFILE|_glue|_rand48|timeval|timespec|stat.*|DIR_ITER" \
     --no-default "__reent" \
-    --allowlist-var "STD_.*|_IO.*F" \
+    --allowlist-var "STD_.*|_IO.*F|devoptab_list" \
     --allowlist-function "__getreent" \
     --with-derive-default \
     -- \

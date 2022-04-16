@@ -9,25 +9,7 @@ use fontdue::layout::WrapStyle;
 use fontdue::layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-mod ffi {
-    #![allow(non_camel_case_types)]
-    #![allow(non_upper_case_globals)]
-    #![allow(non_camel_case_types)]
-    #![allow(non_snake_case)]
-    #![allow(dead_code)]
-    #![allow(clippy::all)]
-
-    mod generated;
-    pub use generated::*;
-
-    extern "C" {
-        // Unfortunately, the bindgen-generated type for this has size 0 instead
-        // of the actual STD_MAX or variable size, so we write our own declaration
-        // here instead.
-        #[link_name = "devoptab_list"]
-        pub static mut DEVOPTAB_LIST: [*const devoptab_t; STD_MAX as usize];
-    }
-}
+mod ffi;
 
 const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf");
 
@@ -111,9 +93,8 @@ impl<'screen> Console<'screen> {
 
             let stdout: &'static ffi::devoptab_t = STDOUT.get().unwrap();
 
-            let devoptab_list = &mut ffi::DEVOPTAB_LIST;
-
-            devoptab_list[ffi::STD_OUT as usize] = stdout as *const ffi::devoptab_t;
+            let devoptab_list = ffi::devoptab_list.as_mut_ptr();
+            *devoptab_list.add(ffi::STD_OUT as usize) = stdout as *const ffi::devoptab_t;
 
             #[allow(clippy::used_underscore_binding)]
             let stdout_file = (*ffi::__getreent())._stdout;

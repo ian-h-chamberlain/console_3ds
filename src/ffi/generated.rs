@@ -370,3 +370,6 @@ impl Default for devoptab_t {
         }
     }
 }
+extern "C" {
+    pub static mut devoptab_list: [*const devoptab_t; 0usize];
+}
