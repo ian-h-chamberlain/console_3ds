@@ -55,7 +55,7 @@ unsafe extern "C" fn write_r(
 }
 
 impl<'screen> Console<'screen> {
-    const SCALE: f32 = 14.0;
+    const SCALE: f32 = 11.0;
 
     pub fn init(mut screen: RefMut<'screen, BottomScreen>) -> Self {
         let font = Font::from_bytes(
@@ -179,15 +179,8 @@ impl<'screen> Console<'screen> {
                     // RGB656 == 2 bytes per pixel
                     let offset = (framebuffer_x + framebuffer_y * frame_buffer.width as usize) * 2;
 
-                    // Round 50% or more up for now. Antialiasing would be nice but
-                    // is kinda weird with the 565 format, it seems...
-                    let value = if pixels[j * width + i] > 0x7F {
-                        0xFF
-                    } else {
-                        0
-                    };
-
-                    let rgb_bytes = rgb565(value, value, value).to_be_bytes();
+                    let value = pixels[j * width + i];
+                    let rgb_bytes = rgb565(value, value, value).to_le_bytes();
 
                     unsafe {
                         frame_buffer
@@ -216,5 +209,8 @@ impl<'gfx> Drop for Console<'gfx> {
 }
 
 fn rgb565(r: u8, g: u8, b: u8) -> u16 {
-    (u16::from(b) & 0x1f) | ((u16::from(g) & 0x3f) << 5) | ((u16::from(r) & 0x1f) << 11)
+    let r = u16::from(r) * 0x1F / 0xFF;
+    let g = u16::from(g) * 0x3F / 0xFF;
+    let b = u16::from(b) * 0x1F / 0xFF;
+    r << 11 | g << 5 | b
 }

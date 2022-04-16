@@ -9,6 +9,6 @@ ctru-rs = { git = "https://github.com/Meziu/ctru-rs.git" }
 fontdue = "0.7.2"
 libc = { path = "../libc" }
 
-[profile.dev.package.fontdue]
 # Without this, font loading takes a really long time at startup
+[profile.dev.package.ttf-parser]
 opt-level = 3
