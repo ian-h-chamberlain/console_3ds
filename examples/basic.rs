@@ -35,12 +35,17 @@ fn main() {
         let keys = hid.keys_down();
         if keys.contains(KeyPad::KEY_START) {
             break;
-        } else if keys.contains(KeyPad::KEY_A) {
+        }
+
+        if keys.contains(KeyPad::KEY_A) {
             println!("Hello world!");
         } else if keys.contains(KeyPad::KEY_B) {
             println!(
                 "This is a really long line of text to test the wrapping behavior of the library"
             );
+        } else if keys.contains(KeyPad::KEY_X) {
+            top_console.use_subpixel_rendering = !top_console.use_subpixel_rendering;
+            println!("Toggled subpixel rendering");
         }
 
         gfx.flush_buffers();

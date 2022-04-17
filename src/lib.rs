@@ -20,6 +20,7 @@ pub struct Console<'screen> {
     layout: Layout<()>,
     screen: RefMut<'screen, BottomScreen>,
     is_stdout_selected: Cell<bool>,
+    pub use_subpixel_rendering: bool,
 }
 
 unsafe extern "C" fn write_r(
@@ -28,8 +29,13 @@ unsafe extern "C" fn write_r(
     ptr: *const ::libc::c_char,
     len: libc::size_t,
 ) -> libc::ssize_t {
-    let console: &mut Console = &mut *((*r).deviceData).cast();
-    console.write(fd, ptr, len as usize) as libc::ssize_t
+    let device = (*r).deviceData;
+    if device.is_null() {
+        -1
+    } else {
+        let console: &mut Console = &mut *(device).cast();
+        console.write(fd, ptr, len as usize) as libc::ssize_t
+    }
 }
 
 impl<'screen> Console<'screen> {
@@ -62,6 +68,7 @@ impl<'screen> Console<'screen> {
             layout,
             screen,
             is_stdout_selected: Cell::new(false),
+            use_subpixel_rendering: false,
         }
     }
 
@@ -81,13 +88,12 @@ impl<'screen> Console<'screen> {
             {
                 // UNWRAP: safe because we just initialized STDOUT
                 let stdout = STDOUT.get_mut().unwrap();
-
-                // if !stdout.deviceData.is_null() {
-                //     // "tell" the other console it's no longer in use
-                //     (*(stdout.deviceData as *const Self))
-                //         .is_stdout_selected
-                //         .set(false);
-                // }
+                if !stdout.deviceData.is_null() {
+                    // "tell" the other console it's no longer in use
+                    (*(stdout.deviceData as *const Self))
+                        .is_stdout_selected
+                        .set(false);
+                }
                 stdout.deviceData = (self as *mut Self).cast();
             }
 
@@ -142,8 +148,11 @@ impl<'screen> Console<'screen> {
                 continue;
             }
 
-            // TODO: try subpixel rendering
-            let (_, pixels) = self.fonts[font_index].rasterize(parent, Self::SCALE);
+            let (_, pixels) = if self.use_subpixel_rendering {
+                self.fonts[font_index].rasterize_subpixel(parent, Self::SCALE)
+            } else {
+                self.fonts[font_index].rasterize(parent, Self::SCALE)
+            };
 
             for j in 0..height {
                 for i in 0..width {
@@ -156,8 +165,17 @@ impl<'screen> Console<'screen> {
                     // RGB656 == 2 bytes per pixel
                     let offset = (framebuffer_x + framebuffer_y * frame_buffer.width as usize) * 2;
 
-                    let value = pixels[j * width + i];
-                    let rgb_bytes = rgb565(value, value, value).to_le_bytes();
+                    let px_offset = j * width + i;
+                    let rgb_bytes = if self.use_subpixel_rendering {
+                        let px_offset = px_offset * 3;
+                        let r = pixels[px_offset];
+                        let g = pixels[px_offset + 1];
+                        let b = pixels[px_offset + 2];
+                        rgb565(r, g, b).to_le_bytes()
+                    } else {
+                        let value = pixels[px_offset];
+                        rgb565(value, value, value).to_le_bytes()
+                    };
 
                     unsafe {
                         frame_buffer
@@ -175,13 +193,20 @@ impl<'screen> Console<'screen> {
 
 impl<'gfx> Drop for Console<'gfx> {
     fn drop(&mut self) {
-        if self.is_stdout_selected.get() {
-            unsafe {
-                // TODO: probably should just set devoptab_list entry to devnull
-                STDOUT.get_mut().unwrap().deviceData = ptr::null_mut();
-                STDOUT.get_mut().unwrap().write_r = None;
-            }
-        }
+        // // TODO: something here is segfaulting...
+
+        // static mut DEVNULL: OnceCell<ffi::devoptab_t> = OnceCell::new();
+        // if self.is_stdout_selected.get() {
+        //     unsafe {
+        //         if let Some(stdout) = STDOUT.get_mut() {
+        //             stdout.deviceData = ptr::null_mut();
+        //         }
+
+        //         let devnull = DEVNULL.get_or_init(ffi::devoptab_t::default);
+        //         let devoptab_list = ffi::devoptab_list.as_mut_ptr();
+        //         *devoptab_list.add(ffi::STD_OUT as usize) = devnull as *const _;
+        //     }
+        // }
     }
 }
 
