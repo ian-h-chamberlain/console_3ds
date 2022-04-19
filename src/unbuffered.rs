@@ -51,6 +51,31 @@ impl<'screen> Console<'screen> {
             use_subpixel_rendering: false,
         }
     }
+
+    fn draw_pixel(
+        frame_buffer: &mut RawFrameBuffer<'screen>,
+        x: usize,
+        y: usize,
+        color: (u8, u8, u8),
+    ) {
+        // RGB656 == 2 bytes per pixel
+        let offset = (x + y * frame_buffer.width as usize) * 2;
+
+        let (r, g, b) = color;
+        let r = u16::from(r) * 0x1F / 0xFF;
+        let g = u16::from(g) * 0x3F / 0xFF;
+        let b = u16::from(b) * 0x1F / 0xFF;
+        let rgb565 = r << 11 | g << 5 | b;
+
+        let rgb_bytes = rgb565.to_le_bytes();
+
+        unsafe {
+            frame_buffer
+                .ptr
+                .add(offset)
+                .copy_from(rgb_bytes.as_ptr(), rgb_bytes.len());
+        }
+    }
 }
 
 impl<'screen> crate::Console<'screen> for Console<'screen> {
@@ -63,6 +88,16 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
     fn select_stderr(&mut self) {
         unsafe {
             ffi::set_stderr(self);
+        }
+    }
+
+    fn clear(&mut self) {
+        self.layout.clear();
+
+        for y in 0..self.frame_buffer.height {
+            for x in 0..self.frame_buffer.width {
+                Self::draw_pixel(&mut self.frame_buffer, x.into(), y.into(), (0, 0, 0));
+            }
         }
     }
 
@@ -100,28 +135,19 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
                     // positive y in glyph == negative y in framebuffer
                     let framebuffer_x = self.frame_buffer.width as usize - (glyph_y as usize + j);
 
-                    // RGB656 == 2 bytes per pixel
-                    let offset =
-                        (framebuffer_x + framebuffer_y * self.frame_buffer.width as usize) * 2;
-
                     let px_offset = j * width + i;
-                    let rgb_bytes = if self.use_subpixel_rendering {
+                    let color = if self.use_subpixel_rendering {
                         let px_offset = px_offset * 3;
                         let r = pixels[px_offset];
                         let g = pixels[px_offset + 1];
                         let b = pixels[px_offset + 2];
-                        rgb565(r, g, b).to_le_bytes()
+                        (r, g, b)
                     } else {
                         let value = pixels[px_offset];
-                        rgb565(value, value, value).to_le_bytes()
+                        (value, value, value)
                     };
 
-                    unsafe {
-                        self.frame_buffer
-                            .ptr
-                            .add(offset)
-                            .copy_from(rgb_bytes.as_ptr(), rgb_bytes.len());
-                    }
+                    Self::draw_pixel(&mut self.frame_buffer, framebuffer_x, framebuffer_y, color);
                 }
             }
         }
@@ -147,11 +173,4 @@ impl<'gfx> Drop for Console<'gfx> {
         //     }
         // }
     }
-}
-
-fn rgb565(r: u8, g: u8, b: u8) -> u16 {
-    let r = u16::from(r) * 0x1F / 0xFF;
-    let g = u16::from(g) * 0x3F / 0xFF;
-    let b = u16::from(b) * 0x1F / 0xFF;
-    r << 11 | g << 5 | b
 }

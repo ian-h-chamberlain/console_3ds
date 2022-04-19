@@ -56,11 +56,12 @@ fn main() {
 
         let keys_held = hid.keys_held();
 
-        let stream: &mut dyn Write = if keys_held.contains(KeyPad::KEY_L) {
-            &mut stderr
-        } else {
-            &mut stdout
-        };
+        let (stream, console): (&mut dyn Write, &mut UnbufferedConsole) =
+            if keys_held.contains(KeyPad::KEY_L) {
+                (&mut stderr, &mut bottom_console)
+            } else {
+                (&mut stdout, &mut top_console)
+            };
 
         if keys_pressed.contains(KeyPad::KEY_A) {
             writeln!(stream, "Hello world!").unwrap();
@@ -71,12 +72,10 @@ fn main() {
             )
             .unwrap();
         } else if keys_pressed.contains(KeyPad::KEY_X) {
-            if keys_held.contains(KeyPad::KEY_L) {
-                bottom_console.use_subpixel_rendering = !bottom_console.use_subpixel_rendering;
-            } else {
-                top_console.use_subpixel_rendering = !top_console.use_subpixel_rendering;
-            }
+            console.use_subpixel_rendering = !console.use_subpixel_rendering;
             writeln!(stream, "Toggled subpixel rendering").unwrap();
+        } else if keys_pressed.contains(KeyPad::KEY_Y) {
+            console.clear();
         }
 
         gfx.swap_buffers();

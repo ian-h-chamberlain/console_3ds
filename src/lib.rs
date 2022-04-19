@@ -18,6 +18,10 @@ pub trait Console<'screen> {
     /// Select this as the console to render when standard error is written to.
     fn select_stderr(&mut self);
 
+    /// Clear the console screen. It's up to the implementation if this also means
+    /// clearing any internal buffers or other state.
+    fn clear(&mut self);
+
     /// Write directly to the console. In most cases it should be preferable
     /// to call [`select_stdout`] or [`select_stderr`] and use the standard
     /// [`print!`]/[`eprint!`] or similar.
