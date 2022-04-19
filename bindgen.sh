@@ -16,7 +16,7 @@ bindgen "src/ffi/types.h" \
     --opaque-type "_mbstate_t|__locale_t|_Bigint|__tm|_on_exit_args|_atexit|__sbuf|__sFILE|_glue|_rand48|timeval|timespec|stat.*|DIR_ITER" \
     --no-default "__reent" \
     --allowlist-var "STD_.*|^_IO.*|devoptab_list" \
-    --allowlist-function "__getreent" \
+    --allowlist-function "__getreent|__errno" \
     --with-derive-default \
     -- \
     --target=arm-none-eabi \

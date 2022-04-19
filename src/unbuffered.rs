@@ -1,45 +1,28 @@
-use std::cell::{Cell, RefMut};
-use std::lazy::OnceCell;
-use std::ptr;
-
-use ctru::gfx::BottomScreen;
-use fontdue::layout::WrapStyle;
-use fontdue::layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle};
+use ctru::gfx::RawFrameBuffer;
+use fontdue::layout::{
+    CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle, WrapStyle,
+};
 use fontdue::{Font, FontSettings};
 
 use crate::ffi;
 
 const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf");
 
-static mut STDOUT: OnceCell<ffi::devoptab_t> = OnceCell::new();
-
+/// A console that merely renders to the screen and discards the input string.
 pub struct Console<'screen> {
     fonts: Vec<Font>,
     layout: Layout<()>,
-    screen: RefMut<'screen, BottomScreen>,
-    is_stdout_selected: Cell<bool>,
+    frame_buffer: RawFrameBuffer<'screen>,
     pub use_subpixel_rendering: bool,
 }
 
-unsafe extern "C" fn write_r(
-    r: *mut ffi::_reent,
-    fd: *mut ::libc::c_void,
-    ptr: *const ::libc::c_char,
-    len: libc::size_t,
-) -> libc::ssize_t {
-    let device = (*r).deviceData;
-    if device.is_null() {
-        -1
-    } else {
-        let console: &mut Console = &mut *(device).cast();
-        console.write(fd, ptr, len as usize) as libc::ssize_t
-    }
-}
-
 impl<'screen> Console<'screen> {
+    // TODO: configurable size? probably would be nice
     const SCALE: f32 = 11.0;
 
-    pub fn init(mut screen: RefMut<'screen, BottomScreen>) -> Self {
+    /// Initialize the console from a frame buffer.
+    #[must_use]
+    pub fn init(frame_buffer: RawFrameBuffer<'screen>) -> Self {
         let font = Font::from_bytes(
             DEFAULT_FONT,
             FontSettings {
@@ -55,8 +38,8 @@ impl<'screen> Console<'screen> {
         layout.reset(&LayoutSettings {
             x: 0.0,
             y: 0.0,
-            max_width: Some(f32::from(screen.get_raw_framebuffer().height)),
-            max_height: Some(f32::from(screen.get_raw_framebuffer().width)),
+            max_width: Some(f32::from(frame_buffer.height)),
+            max_height: Some(f32::from(frame_buffer.width)),
             wrap_style: WrapStyle::Letter,
             ..Default::default()
         });
@@ -64,69 +47,26 @@ impl<'screen> Console<'screen> {
         Self {
             fonts: vec![font],
             layout,
-            screen,
-            is_stdout_selected: Cell::new(false),
+            frame_buffer,
             use_subpixel_rendering: false,
         }
     }
+}
 
-    pub fn select_stdout(&mut self) {
-        self.is_stdout_selected.set(true);
-
+impl<'screen> crate::Console<'screen> for Console<'screen> {
+    fn select_stdout(&mut self) {
         unsafe {
-            STDOUT.get_or_init(|| ffi::devoptab_t {
-                name: "console_stdout\0".as_ptr().cast(),
-                // structSize: std::mem::size_of::<Self>() as u32,
-                write_r: Some(write_r),
-                ..Default::default()
-            });
-
-            // We have to set the deviceData here instead the init code above,
-            // so that we can set different
-            {
-                // UNWRAP: safe because we just initialized STDOUT
-                let stdout = STDOUT.get_mut().unwrap();
-                if !stdout.deviceData.is_null() {
-                    // "tell" the other console it's no longer in use
-                    (*(stdout.deviceData as *const Self))
-                        .is_stdout_selected
-                        .set(false);
-                }
-                stdout.deviceData = (self as *mut Self).cast();
-            }
-
-            let stdout: &'static ffi::devoptab_t = STDOUT.get().unwrap();
-
-            let devoptab_list = ffi::devoptab_list.as_mut_ptr();
-            *devoptab_list.add(ffi::STD_OUT as usize) = stdout as *const ffi::devoptab_t;
-
-            #[allow(clippy::used_underscore_binding)]
-            let stdout_file = (*ffi::__getreent())._stdout;
-            libc::setvbuf(stdout_file.cast(), ptr::null_mut(), ffi::_IONBF as _, 0);
+            ffi::set_stdout(self);
         }
     }
 
-    pub fn select_stderr(&self) {
-        todo!()
+    fn select_stderr(&mut self) {
+        unsafe {
+            ffi::set_stderr(self);
+        }
     }
 
-    fn write(
-        &mut self,
-        _fd: *mut libc::c_void,
-        ptr: *const libc::c_char,
-        len: usize,
-    ) -> libc::ssize_t {
-        let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-
-        let text = if let Ok(s) = std::str::from_utf8(bytes) {
-            s
-        } else {
-            // just fail for now
-            return 0;
-        };
-
-        let frame_buffer = self.screen.get_raw_framebuffer();
-
+    fn write(&mut self, text: &str) -> libc::ssize_t {
         self.layout
             .append(&self.fonts, &TextStyle::new(text, Self::SCALE, 0));
 
@@ -158,10 +98,11 @@ impl<'screen> Console<'screen> {
                     let framebuffer_y = glyph_x as usize + i;
 
                     // positive y in glyph == negative y in framebuffer
-                    let framebuffer_x = frame_buffer.width as usize - (glyph_y as usize + j);
+                    let framebuffer_x = self.frame_buffer.width as usize - (glyph_y as usize + j);
 
                     // RGB656 == 2 bytes per pixel
-                    let offset = (framebuffer_x + framebuffer_y * frame_buffer.width as usize) * 2;
+                    let offset =
+                        (framebuffer_x + framebuffer_y * self.frame_buffer.width as usize) * 2;
 
                     let px_offset = j * width + i;
                     let rgb_bytes = if self.use_subpixel_rendering {
@@ -176,7 +117,7 @@ impl<'screen> Console<'screen> {
                     };
 
                     unsafe {
-                        frame_buffer
+                        self.frame_buffer
                             .ptr
                             .add(offset)
                             .copy_from(rgb_bytes.as_ptr(), rgb_bytes.len());
@@ -185,7 +126,7 @@ impl<'screen> Console<'screen> {
             }
         }
 
-        len as _
+        text.len().try_into().unwrap()
     }
 }
 

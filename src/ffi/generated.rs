@@ -180,6 +180,9 @@ impl Default for _reent {
 extern "C" {
     pub fn __getreent() -> *mut _reent;
 }
+extern "C" {
+    pub fn __errno() -> *mut ::libc::c_int;
+}
 #[repr(C)]
 #[repr(align(8))]
 #[derive(Debug, Default, Copy, Clone)]
