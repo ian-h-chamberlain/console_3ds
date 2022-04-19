@@ -28,15 +28,15 @@ unsafe fn get_stderr() -> *mut __FILE {
 
 pub(crate) unsafe extern "C" fn write_r<'c, C: Console<'c>>(
     r: *mut _reent,
-    fd: *mut ::libc::c_void,
+    _fd: *mut ::libc::c_void,
     ptr: *const ::libc::c_char,
     len: libc::size_t,
 ) -> libc::ssize_t {
-    let fd = fd.cast();
-    if !(std::ptr::eq(fd, get_stdout()) || std::ptr::eq(fd, get_stderr())) {
-        *__errno() = libc::EBADF;
-        return -1;
-    }
+    // let fd = fd.cast();
+    // if !(std::ptr::eq(fd, get_stdout()) || std::ptr::eq(fd, get_stderr())) {
+    //     *__errno() = libc::EBADF;
+    //     return -1;
+    // }
 
     let device = (*r).deviceData;
     if device.is_null() {
@@ -76,6 +76,13 @@ pub(crate) unsafe fn set_stdout<'c, C: Console<'c>>(console: &mut C) {
         //
         stdout.deviceData = (console as *mut C).cast();
     }
+
+    let stdout: &'static devoptab_t = STDOUT.get().unwrap();
+
+    let dev_list = devoptab_list.as_mut_ptr();
+    *dev_list.add(STD_OUT as usize) = stdout;
+
+    libc::setvbuf(get_stdout().cast(), std::ptr::null_mut(), _IONBF as _, 0);
 }
 
 pub(crate) unsafe fn set_stderr<'c, C: Console<'c>>(console: &mut C) {
