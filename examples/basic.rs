@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use console_3ds::Console;
+use console_3ds::UnbufferedConsole;
 use ctru::gfx::{Gfx, Screen};
 use ctru::services::apt::Apt;
 use ctru::services::gspgpu::FramebufferFormat;
@@ -24,7 +24,7 @@ fn main() {
     let start = Instant::now();
 
     // Start a console on the top screen
-    let mut top_console = Console::init(bottom_screen);
+    let mut top_console = UnbufferedConsole::init(bottom_screen);
     top_console.select_stdout();
 
     let duration = Instant::now() - start;

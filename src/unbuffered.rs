@@ -1,5 +1,3 @@
-#![feature(once_cell)]
-
 use std::cell::{Cell, RefMut};
 use std::lazy::OnceCell;
 use std::ptr;
@@ -9,7 +7,7 @@ use fontdue::layout::WrapStyle;
 use fontdue::layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
 
-mod ffi;
+use crate::ffi;
 
 const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf");
 
