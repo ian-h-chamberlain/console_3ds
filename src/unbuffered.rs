@@ -12,6 +12,8 @@ const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Ubuntu_Mono/UbuntuMono-Regu
 pub struct Console<'screen> {
     fonts: Vec<Font>,
     layout: Layout<()>,
+    negative_y_offset: f32,
+    line_height: u16,
     frame_buffer: RawFrameBuffer<'screen>,
     pub use_subpixel_rendering: bool,
 }
@@ -32,21 +34,31 @@ impl<'screen> Console<'screen> {
         )
         .unwrap();
 
-        // Framebuffer is in portrait mode, so swap X/Y and use a positive-y up
-        // instead of down, which is the framebuffer's order.
+        // The framebuffer is laid out in portrait mode, so swap X and Y...
+        let max_width = f32::from(frame_buffer.height);
+
+        // ...and use a positive-y up instead of down to get the right orientation.
         let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
         layout.reset(&LayoutSettings {
             x: 0.0,
             y: 0.0,
-            max_width: Some(f32::from(frame_buffer.height)),
-            max_height: Some(f32::from(frame_buffer.width)),
+            max_height: None,
+            max_width: Some(max_width),
             wrap_style: WrapStyle::Letter,
             ..Default::default()
         });
 
+        let line_height = font
+            .horizontal_line_metrics(Self::SCALE)
+            .unwrap()
+            .new_line_size
+            .ceil() as u16;
+
         Self {
             fonts: vec![font],
             layout,
+            negative_y_offset: 0.0,
+            line_height,
             frame_buffer,
             use_subpixel_rendering: false,
         }
@@ -54,12 +66,13 @@ impl<'screen> Console<'screen> {
 
     fn draw_pixel(
         frame_buffer: &mut RawFrameBuffer<'screen>,
-        x: usize,
-        y: usize,
+        pixel_x: usize,
+        pixel_y: usize,
         color: (u8, u8, u8),
     ) {
-        // RGB656 == 2 bytes per pixel
-        let offset = (x + y * frame_buffer.width as usize) * 2;
+        let mut frame_buffer = Rgb565FrameBuffer(frame_buffer);
+
+        let offset = pixel_x + pixel_y * frame_buffer.width();
 
         let (r, g, b) = color;
         let r = u16::from(r) * 0x1F / 0xFF;
@@ -67,14 +80,52 @@ impl<'screen> Console<'screen> {
         let b = u16::from(b) * 0x1F / 0xFF;
         let rgb565 = r << 11 | g << 5 | b;
 
-        let rgb_bytes = rgb565.to_le_bytes();
-
         unsafe {
-            frame_buffer
-                .ptr
-                .add(offset)
-                .copy_from(rgb_bytes.as_ptr(), rgb_bytes.len());
+            frame_buffer.ptr().add(offset).write(rgb565.to_le());
         }
+    }
+
+    fn scroll_framebuffer_up(frame_buffer: &mut RawFrameBuffer<'screen>, amount: u16) {
+        let mut frame_buffer = Rgb565FrameBuffer(frame_buffer);
+
+        for y in (0..frame_buffer.height()).map(usize::from) {
+            let src_x = 0;
+            let src_offset = src_x + y * frame_buffer.width();
+
+            let dst_x = usize::from(amount);
+            let dst_offset = dst_x + y * frame_buffer.width();
+
+            let count = frame_buffer.width() - usize::from(amount);
+
+            unsafe {
+                let src = frame_buffer.ptr().add(src_offset);
+                let dst = frame_buffer.ptr().add(dst_offset);
+                std::ptr::copy(src, dst, count);
+            }
+
+            // clear the "new" pixels that were copied out of
+            unsafe {
+                let src = frame_buffer.ptr().add(src_offset);
+                src.write_bytes(0, usize::from(amount));
+            }
+        }
+    }
+}
+
+/// Helper struct for copying per-pixel (u16) instead of per-byte (u8)
+struct Rgb565FrameBuffer<'a, 'screen>(&'a mut RawFrameBuffer<'screen>);
+
+impl<'a, 'screen> Rgb565FrameBuffer<'a, 'screen> {
+    fn ptr(&mut self) -> *mut u16 {
+        self.0.ptr.cast()
+    }
+
+    fn width(&self) -> usize {
+        usize::from(self.0.width)
+    }
+
+    fn height(&self) -> usize {
+        usize::from(self.0.height)
     }
 }
 
@@ -93,6 +144,7 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
 
     fn clear(&mut self) {
         self.layout.clear();
+        self.negative_y_offset = 0.0;
 
         for y in 0..self.frame_buffer.height {
             for x in 0..self.frame_buffer.width {
@@ -104,6 +156,25 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
     fn write(&mut self, text: &str) -> libc::ssize_t {
         self.layout
             .append(&self.fonts, &TextStyle::new(text, Self::SCALE, 0));
+
+        // This almost works, it seems. Just need to nail down the x-offset stuff
+
+        let rendered_height = self.layout.height() - self.negative_y_offset;
+        // int divide the frame buffer width by the line height
+        let max_height = self.line_height * (self.frame_buffer.width / self.line_height);
+
+        let height_diff = rendered_height - f32::from(max_height);
+        if height_diff > 0.0 {
+            // we may need to scroll by more than one line
+            let scroll_amount = self.line_height * height_diff as u16 / self.line_height;
+
+            self.negative_y_offset += f32::from(scroll_amount);
+            Self::scroll_framebuffer_up(&mut self.frame_buffer, scroll_amount);
+
+            // TODO: it would be nice if we could "prune" the scroll buffer for stuff
+            // that's not rendered anymore, but might require saving all the text we've
+            // already rendered...
+        }
 
         for &glyph in self.layout.glyphs() {
             let GlyphPosition {
@@ -121,6 +192,8 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
                 continue;
             }
 
+            let glyph_y = glyph_y - self.negative_y_offset;
+
             let (_, pixels) = if self.use_subpixel_rendering {
                 self.fonts[font_index].rasterize_subpixel(parent, Self::SCALE)
             } else {
@@ -129,11 +202,15 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
 
             for j in 0..height {
                 for i in 0..width {
+                    let pixel_y = glyph_y + j as f32;
+                    if pixel_y > f32::from(self.frame_buffer.width) || pixel_y < 0.0 {
+                        continue;
+                    }
+
                     // Swap x + y for portrait-mode framebuffer.
                     let framebuffer_y = glyph_x as usize + i;
-
                     // positive y in glyph == negative y in framebuffer
-                    let framebuffer_x = self.frame_buffer.width as usize - (glyph_y as usize + j);
+                    let framebuffer_x = self.frame_buffer.width as usize - pixel_y as usize;
 
                     let px_offset = j * width + i;
                     let color = if self.use_subpixel_rendering {

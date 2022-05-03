@@ -4,18 +4,18 @@ version = "0.1.0"
 edition = "2021"
 authors = [""]
 
+[features]
+default = []
+debug-grid = []
+
 [dependencies]
 ctru-rs = { git = "https://github.com/Meziu/ctru-rs.git" }
 fontdue = "0.7.2"
-libc = { path = "../libc" }
+libc = "0.2.125"
 
+# A bit faster for running the examples, etc.
 [profile.dev]
-# https://github.com/Meziu/ctru-rs/pull/56
 opt-level = 1
 
-# Without this, font loading takes a really long time at startup
 [profile.dev.package.ttf-parser]
 opt-level = 3
-
-[patch."https://github.com/Meziu/pthread-3ds.git"]
-pthread-3ds = { path = "../pthread-3ds" }

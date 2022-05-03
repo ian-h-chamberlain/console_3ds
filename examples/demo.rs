@@ -7,6 +7,10 @@ use ctru::services::apt::Apt;
 use ctru::services::gspgpu::FramebufferFormat;
 use ctru::services::hid::{Hid, KeyPad};
 
+/// Workaround for <https://github.com/Meziu/ctru-rs/pull/56>
+#[no_mangle]
+static __stacksize__: usize = 2 * 1024 * 1024;
+
 fn main() {
     ctru::init();
 
@@ -32,8 +36,7 @@ fn main() {
     let mut top_console = UnbufferedConsole::init(top_screen.get_raw_framebuffer(Side::Left));
     top_console.select_stdout();
 
-    let duration = Instant::now() - start;
-    println!("Loaded top screen in {:.2?}", duration);
+    println!("Loaded top screen in {:.2?}", start.elapsed());
 
     let start = Instant::now();
 
@@ -41,8 +44,7 @@ fn main() {
     let mut bottom_console = UnbufferedConsole::init(bottom_screen.get_raw_framebuffer());
     bottom_console.select_stderr();
 
-    let duration = Instant::now() - start;
-    eprintln!("Loaded bottom screen in {:.2?}", duration);
+    eprintln!("Loaded bottom screen in {:.2?}", start.elapsed());
 
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();

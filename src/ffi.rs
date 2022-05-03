@@ -32,12 +32,6 @@ pub(crate) unsafe extern "C" fn write_r<'c, C: Console<'c>>(
     ptr: *const ::libc::c_char,
     len: libc::size_t,
 ) -> libc::ssize_t {
-    // let fd = fd.cast();
-    // if !(std::ptr::eq(fd, get_stdout()) || std::ptr::eq(fd, get_stderr())) {
-    //     *__errno() = libc::EBADF;
-    //     return -1;
-    // }
-
     let device = (*r).deviceData;
     if device.is_null() {
         *__errno() = libc::EINVAL;
@@ -82,7 +76,9 @@ pub(crate) unsafe fn set_stdout<'c, C: Console<'c>>(console: &mut C) {
     let dev_list = devoptab_list.as_mut_ptr();
     *dev_list.add(STD_OUT as usize) = stdout;
 
-    libc::setvbuf(get_stdout().cast(), std::ptr::null_mut(), _IONBF as _, 0);
+    // UNWRAP: const is always a valid i32
+    let mode = _IONBF.try_into().unwrap();
+    libc::setvbuf(get_stdout().cast(), std::ptr::null_mut(), mode, 0);
 }
 
 pub(crate) unsafe fn set_stderr<'c, C: Console<'c>>(console: &mut C) {
@@ -109,5 +105,7 @@ pub(crate) unsafe fn set_stderr<'c, C: Console<'c>>(console: &mut C) {
     let dev_list = devoptab_list.as_mut_ptr();
     *dev_list.add(STD_ERR as usize) = stderr;
 
-    libc::setvbuf(get_stderr().cast(), std::ptr::null_mut(), _IONBF as _, 0);
+    // UNWRAP: const is always a valid i32
+    let mode = _IONBF.try_into().unwrap();
+    libc::setvbuf(get_stderr().cast(), std::ptr::null_mut(), mode, 0);
 }
