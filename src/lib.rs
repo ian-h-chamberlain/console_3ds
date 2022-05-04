@@ -1,9 +1,9 @@
 #![feature(once_cell)]
 
+mod buffered;
 mod ffi;
-mod unbuffered;
 
-pub use unbuffered::Console as UnbufferedConsole;
+pub use buffered::Console as BufferedConsole;
 
 /// A `Console` is an object that can be used to render the standard output and
 /// error streams on the 3DS, allowing the conventional use of e.g.

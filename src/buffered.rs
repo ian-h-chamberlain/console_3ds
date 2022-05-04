@@ -87,6 +87,7 @@ impl<'screen> Console<'screen> {
 
     fn scroll_framebuffer_up(frame_buffer: &mut RawFrameBuffer<'screen>, amount: u16) {
         let mut frame_buffer = Rgb565FrameBuffer(frame_buffer);
+        let count = frame_buffer.width() - usize::from(amount);
 
         for y in (0..frame_buffer.height()).map(usize::from) {
             let src_x = 0;
@@ -95,15 +96,13 @@ impl<'screen> Console<'screen> {
             let dst_x = usize::from(amount);
             let dst_offset = dst_x + y * frame_buffer.width();
 
-            let count = frame_buffer.width() - usize::from(amount);
-
             unsafe {
                 let src = frame_buffer.ptr().add(src_offset);
                 let dst = frame_buffer.ptr().add(dst_offset);
                 std::ptr::copy(src, dst, count);
             }
 
-            // clear the "new" pixels that were copied out of
+            // clear the last row of "fresh" pixels
             unsafe {
                 let src = frame_buffer.ptr().add(src_offset);
                 src.write_bytes(0, usize::from(amount));
@@ -112,18 +111,22 @@ impl<'screen> Console<'screen> {
     }
 }
 
-/// Helper struct for copying per-pixel (u16) instead of per-byte (u8)
+/// Helper struct for copying frame buffer data by pixel ([`u16`]) instead of
+/// by byte ([`u8`])
 struct Rgb565FrameBuffer<'a, 'screen>(&'a mut RawFrameBuffer<'screen>);
 
 impl<'a, 'screen> Rgb565FrameBuffer<'a, 'screen> {
+    /// Get a pointer to the pixel frame buffer data.
     fn ptr(&mut self) -> *mut u16 {
         self.0.ptr.cast()
     }
 
+    /// Get the width of the frame buffer, in pixels.
     fn width(&self) -> usize {
         usize::from(self.0.width)
     }
 
+    /// Get the height of the frame buffer, in pixels.
     fn height(&self) -> usize {
         usize::from(self.0.height)
     }
