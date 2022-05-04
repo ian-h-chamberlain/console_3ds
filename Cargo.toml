@@ -19,3 +19,6 @@ opt-level = 1
 
 [profile.dev.package.ttf-parser]
 opt-level = 3
+
+[dev-dependencies]
+lipsum = "0.8.0"

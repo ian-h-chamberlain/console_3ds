@@ -1,4 +1,5 @@
 #![feature(once_cell)]
+#![doc = include_str!("../README.md")]
 
 mod buffered;
 mod ffi;
