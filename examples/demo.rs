@@ -70,7 +70,7 @@ fn main() {
         let keys_held = hid.keys_held();
 
         let (stream, console): (&mut dyn Write, &mut BufferedConsole) =
-            if keys_held.contains(KeyPad::KEY_L) || keys_held.contains(KeyPad::KEY_L) {
+            if keys_held.contains(KeyPad::KEY_L) || keys_held.contains(KeyPad::KEY_R) {
                 (&mut stderr, &mut bottom_console)
             } else {
                 (&mut stdout, &mut top_console)
