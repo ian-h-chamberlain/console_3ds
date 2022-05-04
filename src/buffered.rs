@@ -85,11 +85,14 @@ impl<'screen> Console<'screen> {
         }
     }
 
+    // TODO: somehow, the _bottom_ row of pixels in the top row is getting copied to
+    // the bottom row. It seems like an off-by-one of some kind, but why would it come
+    // from the bottom row?
     fn scroll_framebuffer_up(frame_buffer: &mut RawFrameBuffer<'screen>, amount: u16) {
         let mut frame_buffer = Rgb565FrameBuffer(frame_buffer);
-        let count = frame_buffer.width() - usize::from(amount);
+        let copy_count = frame_buffer.width() - usize::from(amount);
 
-        for y in (0..frame_buffer.height()).map(usize::from) {
+        for y in 0..frame_buffer.height() {
             let src_x = 0;
             let src_offset = src_x + y * frame_buffer.width();
 
@@ -99,7 +102,7 @@ impl<'screen> Console<'screen> {
             unsafe {
                 let src = frame_buffer.ptr().add(src_offset);
                 let dst = frame_buffer.ptr().add(dst_offset);
-                std::ptr::copy(src, dst, count);
+                std::ptr::copy(src, dst, copy_count);
             }
 
             // clear the last row of "fresh" pixels

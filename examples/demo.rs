@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::Instant;
 
-use console_3ds::{Console, UnbufferedConsole};
+use console_3ds::{BufferedConsole, Console};
 use ctru::gfx::{Gfx, Screen, Side};
 use ctru::services::apt::Apt;
 use ctru::services::gspgpu::FramebufferFormat;
@@ -33,7 +33,7 @@ fn main() {
     // TODO allow swapping buffers for separate screens independently. Needs support in ctru-rs
 
     // Start a console on the top screen (left side for non-3d)
-    let mut top_console = UnbufferedConsole::init(top_screen.get_raw_framebuffer(Side::Left));
+    let mut top_console = BufferedConsole::init(top_screen.get_raw_framebuffer(Side::Left));
     top_console.select_stdout();
 
     println!("Loaded top screen in {:.2?}", start.elapsed());
@@ -41,7 +41,7 @@ fn main() {
     let start = Instant::now();
 
     // Use the bottom screen for stderr
-    let mut bottom_console = UnbufferedConsole::init(bottom_screen.get_raw_framebuffer());
+    let mut bottom_console = BufferedConsole::init(bottom_screen.get_raw_framebuffer());
     bottom_console.select_stderr();
 
     eprintln!("Loaded bottom screen in {:.2?}", start.elapsed());
@@ -58,7 +58,7 @@ fn main() {
 
         let keys_held = hid.keys_held();
 
-        let (stream, console): (&mut dyn Write, &mut UnbufferedConsole) =
+        let (stream, console): (&mut dyn Write, &mut BufferedConsole) =
             if keys_held.contains(KeyPad::KEY_L) {
                 (&mut stderr, &mut bottom_console)
             } else {
