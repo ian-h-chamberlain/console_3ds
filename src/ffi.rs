@@ -77,7 +77,7 @@ pub(crate) unsafe fn set_stdout<'c, C: Console<'c>>(console: &mut C) {
     *dev_list.add(STD_OUT as usize) = stdout;
 
     // UNWRAP: const is always a valid i32
-    let mode = _IONBF.try_into().unwrap();
+    let mode = _IOLBF.try_into().unwrap();
     libc::setvbuf(get_stdout().cast(), std::ptr::null_mut(), mode, 0);
 }
 
@@ -106,6 +106,6 @@ pub(crate) unsafe fn set_stderr<'c, C: Console<'c>>(console: &mut C) {
     *dev_list.add(STD_ERR as usize) = stderr;
 
     // UNWRAP: const is always a valid i32
-    let mode = _IONBF.try_into().unwrap();
+    let mode = _IOLBF.try_into().unwrap();
     libc::setvbuf(get_stderr().cast(), std::ptr::null_mut(), mode, 0);
 }

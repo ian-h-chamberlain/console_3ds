@@ -13,22 +13,32 @@ pub struct Console<'screen> {
     fonts: Vec<Font>,
     layout: Layout<()>,
     negative_y_offset: f32,
+    scale: f32,
     line_height: u16,
     frame_buffer: RawFrameBuffer<'screen>,
+    // TODO: setter/getter ?
     pub use_subpixel_rendering: bool,
 }
 
 impl<'screen> Console<'screen> {
-    // TODO: configurable size? probably would be nice
-    const SCALE: f32 = 11.0;
-
-    /// Initialize the console from a frame buffer.
+    /// Initialize the console from a frame buffer, with a given scale (in pixels).
     #[must_use]
-    pub fn init(frame_buffer: RawFrameBuffer<'screen>) -> Self {
+    pub fn init(frame_buffer: RawFrameBuffer<'screen>, scale: u16) -> Self {
+        // alternative: just find the nearest factor of height, and use that
+        // panicking when the user is trying to create a console, is... not very
+        // ergonomic or easy to debug, lol
+        // assert!(
+        //     frame_buffer.width % scale == 0,
+        //     "invalid scale {scale:?} (must be a factor of {:?})",
+        //     frame_buffer.height
+        // );
+
+        let scale = f32::from(scale);
+
         let font = Font::from_bytes(
             DEFAULT_FONT,
             FontSettings {
-                scale: Self::SCALE,
+                scale,
                 ..Default::default()
             },
         )
@@ -48,15 +58,18 @@ impl<'screen> Console<'screen> {
             ..Default::default()
         });
 
-        let line_height = font
-            .horizontal_line_metrics(Self::SCALE)
+        let metric_line_height = font
+            .horizontal_line_metrics(scale)
             .unwrap()
             .new_line_size
-            .ceil() as u16;
+            .ceil();
+
+        let line_height = metric_line_height.max(scale) as u16;
 
         Self {
             fonts: vec![font],
             layout,
+            scale,
             negative_y_offset: 0.0,
             line_height,
             frame_buffer,
@@ -72,22 +85,19 @@ impl<'screen> Console<'screen> {
     ) {
         let mut frame_buffer = Rgb565FrameBuffer(frame_buffer);
 
-        let offset = pixel_x + pixel_y * frame_buffer.width();
-
         let (r, g, b) = color;
         let r = u16::from(r) * 0x1F / 0xFF;
         let g = u16::from(g) * 0x3F / 0xFF;
         let b = u16::from(b) * 0x1F / 0xFF;
+
         let rgb565 = r << 11 | g << 5 | b;
 
+        let px_offset = pixel_x + pixel_y * frame_buffer.width();
         unsafe {
-            frame_buffer.ptr().add(offset).write(rgb565.to_le());
+            frame_buffer.ptr().add(px_offset).write(rgb565.to_le());
         }
     }
 
-    // TODO: somehow, the _bottom_ row of pixels in the top row is getting copied to
-    // the bottom row. It seems like an off-by-one of some kind, but why would it come
-    // from the bottom row?
     fn scroll_framebuffer_up(frame_buffer: &mut RawFrameBuffer<'screen>, amount: u16) {
         let mut frame_buffer = Rgb565FrameBuffer(frame_buffer);
         let copy_count = frame_buffer.width() - usize::from(amount);
@@ -161,7 +171,7 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
 
     fn write(&mut self, text: &str) -> libc::ssize_t {
         self.layout
-            .append(&self.fonts, &TextStyle::new(text, Self::SCALE, 0));
+            .append(&self.fonts, &TextStyle::new(text, self.scale, 0));
 
         // This almost works, it seems. Just need to nail down the x-offset stuff
 
@@ -201,22 +211,25 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
             let glyph_y = glyph_y - self.negative_y_offset;
 
             let (_, pixels) = if self.use_subpixel_rendering {
-                self.fonts[font_index].rasterize_subpixel(parent, Self::SCALE)
+                self.fonts[font_index].rasterize_subpixel(parent, self.scale)
             } else {
-                self.fonts[font_index].rasterize(parent, Self::SCALE)
+                self.fonts[font_index].rasterize(parent, self.scale)
             };
 
             for j in 0..height {
                 for i in 0..width {
                     let pixel_y = glyph_y + j as f32;
-                    if pixel_y > f32::from(self.frame_buffer.width) || pixel_y < 0.0 {
+                    if pixel_y as u16 >= self.frame_buffer.width || pixel_y < 0.0 {
                         continue;
                     }
 
                     // Swap x + y for portrait-mode framebuffer.
                     let framebuffer_y = glyph_x as usize + i;
-                    // positive y in glyph == negative y in framebuffer
-                    let framebuffer_x = self.frame_buffer.width as usize - pixel_y as usize;
+
+                    // Positive y in glyph == negative y in framebuffer.
+                    // Subtract 1, since the offset at `width` is actually the next line
+                    // and `pixel_y` is guaranteed less than `width`.
+                    let framebuffer_x = self.frame_buffer.width as usize - 1 - pixel_y as usize;
 
                     let px_offset = j * width + i;
                     let color = if self.use_subpixel_rendering {
