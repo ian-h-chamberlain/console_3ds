@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::Instant;
 
-use console_3ds::{BufferedConsole, Console};
+use console_3ds::{BufferedConsole, Console, ConsoleSelector};
 use ctru::gfx::{Gfx, Screen, Side};
 use ctru::services::apt::Apt;
 use ctru::services::gspgpu::FramebufferFormat;
@@ -35,7 +35,7 @@ fn main() {
 
     // Start a console on the top screen (left side for non-3d)
     let mut top_console = BufferedConsole::init(top_screen.get_raw_framebuffer(Side::Left), 11);
-    top_console.select_stdout();
+    std::io::stdout().use_console(&mut top_console);
 
     println!(
         r#"Loaded top screen in {:.2?}. Controls:
@@ -50,7 +50,7 @@ fn main() {
 
     // Use the bottom screen for stderr
     let mut bottom_console = BufferedConsole::init(bottom_screen.get_raw_framebuffer(), 12);
-    bottom_console.select_stderr();
+    std::io::stderr().use_console(&mut bottom_console);
 
     eprintln!(
         "Loaded bottom screen in {:.2?}. Hold L or R to use this screen instead of the top screen.",

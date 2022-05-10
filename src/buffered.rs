@@ -1,10 +1,10 @@
+use std::io;
+
 use ctru::gfx::RawFrameBuffer;
 use fontdue::layout::{
     CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle, WrapStyle,
 };
 use fontdue::{Font, FontSettings};
-
-use crate::ffi;
 
 const DEFAULT_FONT: &[u8] = include_bytes!("../fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf");
 
@@ -146,18 +146,6 @@ impl<'a, 'screen> Rgb565FrameBuffer<'a, 'screen> {
 }
 
 impl<'screen> crate::Console<'screen> for Console<'screen> {
-    fn select_stdout(&mut self) {
-        unsafe {
-            ffi::set_stdout(self);
-        }
-    }
-
-    fn select_stderr(&mut self) {
-        unsafe {
-            ffi::set_stderr(self);
-        }
-    }
-
     fn clear(&mut self) {
         self.layout.clear();
         self.negative_y_offset = 0.0;
@@ -168,8 +156,13 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
             }
         }
     }
+}
 
-    fn write(&mut self, text: &str) -> libc::ssize_t {
+impl<'screen> io::Write for Console<'screen> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text =
+            std::str::from_utf8(buf).map_err(|_| io::Error::from_raw_os_error(libc::EINVAL))?;
+
         self.layout
             .append(&self.fonts, &TextStyle::new(text, self.scale, 0));
 
@@ -248,7 +241,11 @@ impl<'screen> crate::Console<'screen> for Console<'screen> {
             }
         }
 
-        text.len().try_into().unwrap()
+        Ok(text.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 

@@ -39,16 +39,23 @@ pub(crate) unsafe extern "C" fn write_r<'c, C: Console<'c>>(
     }
 
     let console: &mut C = &mut *(device).cast();
-    let bytes = std::slice::from_raw_parts(ptr, len);
+    let buf = std::slice::from_raw_parts(ptr, len);
 
-    // Aust write invalid bytes as bad character �
-    let text = String::from_utf8_lossy(bytes);
-    if let Ok(len) = isize::try_from(text.len()) {
-        console.write(&text);
-        len
-    } else {
-        *__errno() = libc::EFBIG;
-        -1
+    match console.write(buf) {
+        Ok(len) => {
+            if let Ok(len) = len.try_into() {
+                len
+            } else {
+                *__errno() = libc::EFBIG;
+                -1
+            }
+        }
+        Err(err) => {
+            if let Some(raw) = err.raw_os_error() {
+                *__errno() = raw;
+            }
+            -1
+        }
     }
 }
 
